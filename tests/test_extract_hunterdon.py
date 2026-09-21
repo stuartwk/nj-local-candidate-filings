@@ -236,3 +236,75 @@ def test_page_numbers_are_recorded_for_provenance():
              (3, CANDIDATE)]
     (c,) = parse(lines, year="2026", source_url="u", source_document="d.pdf")
     assert c.source_page == 3
+
+
+# --- headings that are not headings ---------------------------------------
+
+def test_a_cross_reference_does_not_rename_the_next_town():
+    """`RARITAN TOWNSHIP-SEE FLEMINGTON-RARITAN...` is a signpost to where that
+    town's contest is printed. Read as a district header it renamed whichever
+    town came next — Franklin Township and Hampton Borough both got filed under
+    one."""
+    contests = run("""
+HUNTERDON COUNTY- LOCAL DISTRICTS
+RARITAN TOWNSHIP-SEE FLEMINGTON-RARITAN REGIONAL SCHOOL DISTRICT
+FRANKLIN TOWNSHIP
+School Board Member -3 Yr. Term- Vote for Two
+Jeffrey Castner 93 Sidney School Rd., Annandale, NJ 08801 j@example.com
+""")
+    assert [(c.municipality, c.district_name) for c in contests] \
+        == [("FRANKLIN TOWNSHIP", None)]
+
+
+def test_a_town_named_inside_the_contest_line_is_read():
+    """Where a town's own entry is only a cross-reference, its contest carries
+    the name in mixed case. Missing it left the previous town in place, and
+    Raritan Township's eight candidates were filed under Milford Borough."""
+    contests = run("""
+MILFORD BOROUGH
+School Board Member – 3 Yr. Term- Vote for Three
+Laura Hanson 10 Phylis Lane Milford, NJ 08848 laura@example.com
+NO NOMINATION MADE
+RARITAN TOWNSHIP-SEE FLEMINGTON-RARITAN REGIONAL SCHOOL DISTRICT
+School Board Member – Raritan Township- 3 Yr. Term-Vote for Three
+Susan Mitcheltree 25 Chestnut Tr. Flemington, NJ 08822 susan@example.com
+""")
+    assert [c.municipality for c in contests] == ["MILFORD BOROUGH", "RARITAN TOWNSHIP"]
+    assert contests[0].candidate_count == 1 and contests[1].candidate_count == 1
+
+
+def test_the_towns_capitalisation_is_normalised():
+    (c,) = run("School Board Member – Raritan Township- 3 Yr. Term-Vote for One\n"
+               + CANDIDATE)
+    assert c.municipality == "RARITAN TOWNSHIP"
+
+
+def test_a_town_heading_that_is_not_shouted_is_still_a_heading():
+    """2025 has a bare `Stockton Borough-`. Recognising only capitals walked
+    past it and filed Stockton's contest under Lambertville."""
+    contests = run("""
+CITY OF LAMBERTVILLE
+School Board Member- 3 Yr. Term Vote for One
+Gina Fischetti 116 Clinton St. Lambertville, NJ 08530 gina@example.com
+Stockton Borough-
+School Board Member- 3 Yr. Term-Vote for One
+Paul T. Falcigno 173 Rocktown Rd. Lambertville NJ 08530 paul@example.com
+""")
+    assert [c.municipality for c in contests] == ["CITY OF LAMBERTVILLE",
+                                                  "STOCKTON BOROUGH"]
+
+
+@pytest.mark.parametrize("line,expected", [
+    ("Stockton Borough-", "STOCKTON BOROUGH"),
+    ("CITY OF LAMBERTVILLE", "CITY OF LAMBERTVILLE"),
+    ("Readington Township", "READINGTON TOWNSHIP"),
+    # slogans mentioning a place must not become headings
+    ("Dedicated to Kingwood", None),
+    ("Support Public Education", None),
+    ("Right for Central", None),
+    # nor must candidate lines
+    ("Andrew Sliver 16 Northwood Dr. Pittstown, NJ 08867 a@e.com", None),
+])
+def test_what_counts_as_an_unshouted_town(line, expected):
+    from njfilings.extract.hunterdon import looks_like_a_town
+    assert looks_like_a_town(line) == expected

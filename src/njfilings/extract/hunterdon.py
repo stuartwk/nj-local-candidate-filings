@@ -50,6 +50,11 @@ EMAIL_RE = re.compile(r"[\w.\-+']+@[\w.\-]+\.\w+")
 MUNICIPALITY_RE = re.compile(
     r"\b(TOWNSHIP|TOWNSHP|TWP|BOROUGH|BORO|TOWN|CITY|VILLAGE)\b", re.I)
 DISTRICT_RE = re.compile(r"\b(SCHOOL|DISTRICT|REGIONAL)\b", re.I)
+# `RARITAN TOWNSHIP-SEE FLEMINGTON-RARITAN REGIONAL SCHOOL DISTRICT` is a
+# pointer to where that town's contest is printed, not a heading of its own.
+# Read as a district it renames whatever town comes next, which is how Franklin
+# Township ended up filed under Raritan's cross-reference.
+CROSSREF_RE = re.compile(r"[-\s]SEE\s+[A-Z]", re.I)
 # page furniture and the one structural marker in the document
 SECTION_RE = re.compile(
     r"HUNTERDON COUNTY|ANNUAL SCHOOL ELECTION|Poll Hours|LOCAL DISTRICTS"
@@ -64,6 +69,29 @@ def is_heading(line: str) -> bool:
     """A heading is set in capitals. Slogans and names are not."""
     letters = [c for c in line if c.isalpha()]
     return bool(letters) and sum(c.isupper() for c in letters) / len(letters) > 0.85
+
+
+def looks_like_a_town(line: str) -> str | None:
+    """A municipality heading that is not set in capitals, or None.
+
+    Most headings shout, but not all: 2025 has a bare `Stockton Borough-`, and
+    a parser that only recognises capitals walks straight past it and files that
+    town's contest under whichever town came before — which is what happened to
+    Lambertville.
+
+    A place name ends in its designation (`... Township`, `... Borough`) or
+    opens with one (`CITY OF ...`). Requiring that keeps slogans out, since a
+    slogan mentioning a town rarely ends on the word.
+    """
+    text = line.strip().strip(" -–—_,")
+    if not text or len(text) > 60 or EMAIL_RE.search(text) or any(ch.isdigit() for ch in text):
+        return None
+    if re.match(r"^(CITY|TOWN|BOROUGH|TOWNSHIP)\s+OF\b", text, re.I):
+        return text.upper()
+    last = re.sub(r"[^A-Za-z]+$", "", text).split()[-1] if text.split() else ""
+    if MUNICIPALITY_RE.fullmatch(last or ""):
+        return text.upper()
+    return None
 
 
 def candidate_name(line: str) -> str:
@@ -165,6 +193,8 @@ def parse(numbered: list[tuple[int, str]], year: str, source_url: str,
         # MATTERS`), and treating one as a heading would close the contest its
         # remaining candidates belong to.
         if match is None and is_heading(line):
+            if CROSSREF_RE.search(line):
+                continue            # a signpost, not a heading: changes nothing
             if SECTION_RE.search(line):
                 close()
                 if LOCAL_SECTION_RE.search(line):
@@ -183,14 +213,36 @@ def parse(numbered: list[tuple[int, str]], year: str, source_url: str,
             # otherwise it is a slogan in capitals: not data, and not a boundary
             continue
 
-        if match:
-            # Two 2024 lines put the municipality and the contest together:
-            # `UNION TOWNSHIP- 3 Yr. Term- Vote for One`
-            if before and is_heading(before) and MUNICIPALITY_RE.search(before):
+        # a heading that does not shout. This has to be reachable while a
+        # contest is still open, because that is exactly where such a heading
+        # appears — right after the previous town's last candidate.
+        if match is None:
+            town = looks_like_a_town(line)
+            if town:
                 close()
                 if district_spent:
                     district = None
-                municipality = before
+                municipality = town
+                continue
+
+        if match:
+            # The contest line sometimes names its own municipality, either as
+            # a heading run together with it —
+            #     `UNION TOWNSHIP- 3 Yr. Term- Vote for One`
+            # — or inside the office, in mixed case, where the town's entry is
+            # only a cross-reference:
+            #     `School Board Member - Raritan Township- 3 Yr. Term-Vote for Three`
+            # Both state the municipality outright. Missing the second one left
+            # the previous town in place, and Raritan Township's eight
+            # candidates were filed under Milford Borough.
+            head = re.sub(r"^\s*School\s+Board\s+Member", "", before,
+                          flags=re.I).strip(" -–—_,")
+            if head and MUNICIPALITY_RE.search(head):
+                close()
+                if district_spent:
+                    district = None
+                # the clerk's capitalisation varies; one form so towns group
+                municipality = head.upper()
             close()
             seats = _seats(match.group("seats"))
             if section == "local" or municipality is None:

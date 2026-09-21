@@ -16,6 +16,7 @@ dependencies = [
 capture = "njfilings.capture:main"
 archive = "njfilings.archive:main"
 build = "njfilings.build:main"
+validate = "njfilings.validate:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
