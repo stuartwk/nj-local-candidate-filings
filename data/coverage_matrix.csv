@@ -1,0 +1,19 @@
+county,year,office_type,source_status,pulled_status,format,seats_available,candidates_filed,seats_unfilled_stated,races_extracted,note
+Hunterdon,2022,school board,partial,none,"text PDF, table layout",stated,ABSENT,n/a,0,"Only the pre-filing 'offices up' notice survives: municipality/district/term/seats, no candidates. Its table is also a clean municipality->district crosswalk."
+Hunterdon,2023,school board,complete,complete,"text PDF, outline",stated,stated,stated,34,Single countywide candidate list covers every district.
+Hunterdon,2024,school board,complete,complete,"text PDF, outline",stated,stated,stated,40,
+Hunterdon,2025,school board,complete,complete,"text PDF, outline",stated,stated,stated,37,Two documents exist: a May seats-only notice and an August ballot draw. Ballot draw used; it also marks withdrawals.
+Hunterdon,2026,school board,complete,complete,"text PDF, outline",stated,stated,stated,37,
+Bergen,2019,school board,missing,none,-,-,-,-,0,Only 2 of ~70 municipal sample ballots archived; live site keeps current cycle only.
+Bergen,2020,school board,missing,none,-,-,-,-,0,Same as 2019.
+Bergen,2021,school board,missing,none,-,-,-,-,0,Same as 2019.
+Bergen,2022,school board,missing,none,-,-,-,-,0,No captures found.
+Bergen,2023,school board,complete,partial,"text PDF, one ballot per municipality",stated,stated,stated,7,69 of ~70 municipalities archived. Probe pulled 7. Archived copies carry a DRAFT watermark.
+Bergen,2024,school board,complete,partial,"text PDF, one ballot per municipality",stated,stated,stated,6,72 archived. Probe pulled 8. Portrait layout; 2023 was landscape.
+Bergen,2025,school board,complete,partial,"text PDF, one ballot per municipality",stated,stated,stated,7,73 archived. Probe pulled 8. Path/filename convention differs from 2023 and 2024.
+Essex,2020,school board,available-unparsed,none,"text PDF, countywide",stated,stated,n/a,0,"Archived, but typeset in a different font family (Garamond/Gloucester); needs a third parser profile."
+Essex,2021,school board,missing,none,-,-,-,-,0,No countywide sample-ballot PDF captured.
+Essex,2022,school board,complete,complete,"text PDF, countywide",stated,stated,n/a,18,"One PDF, one page per municipality/ward."
+Essex,2023,school board,complete,complete,"text PDF, countywide",stated,stated,n/a,20,Includes side-by-side contests (regional + local + unexpired on one page).
+Essex,2024,school board,missing,none,-,-,-,-,0,No countywide sample-ballot PDF captured for 2024 under any filename.
+Essex,2025,school board,complete,complete,"text PDF, countywide",stated,stated,n/a,16,

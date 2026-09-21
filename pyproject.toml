@@ -1,0 +1,32 @@
+[project]
+name = "nj-local-candidate-filings"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Stuart", email = "11183054+stuartwk@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pymupdf>=1.28.2",
+]
+
+[project.scripts]
+capture = "njfilings.capture:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv.build-backend]
+# the project is nj-local-candidate-filings; the module is njfilings
+module-name = "njfilings"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

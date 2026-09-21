@@ -1,0 +1,16 @@
+# The capture manifest is an append-only ledger: rows are only ever added, and
+# every row is keyed by URL with a timestamp. When two branches both capture,
+# both append at the end of the file and git reports a conflict over a "both
+# added lines here" hunk that has no actual disagreement in it.
+#
+# union tells git to keep both sides instead. Ordering between the two sets is
+# not preserved and an identical row appended on both sides survives twice —
+# both are harmless here, because the ledger is read as "last row per URL" and
+# rows carry their own timestamps.
+data/manifest.csv       merge=union
+data/manifest/*.csv     merge=union
+
+# Deliberately NOT union-merged: data/races.csv and data/coverage.csv are
+# regenerated wholesale and sorted deterministically (build plan 3.3), so a
+# conflict there is a real disagreement about the data. Union merge would
+# silently duplicate contests instead of making you look.

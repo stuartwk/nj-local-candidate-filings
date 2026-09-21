@@ -1,0 +1,16 @@
+record,county,year,municipality,source_document,source_page,verification_method,seats_available,candidates_filed,candidate_count,municipality_field,term_years,is_unexpired,is_uncontested,seats_unfilled,district_name,notes
+1,Hunterdon,2024,Alexandria Township,UnOfficial School Board Candidates 2024,1,read source text,correct,correct,correct,correct,correct,correct,correct,correct,correct,"Delaware Valley Regional seat; ""Vote for One"", 2 candidates"
+2,Hunterdon,2024,West Amwell Township,UnOfficial School Board Candidates 2024,1,read source text,correct,correct,correct,correct,correct,correct,correct,correct,correct,"1 seat 1 candidate; uncontested"
+3,Hunterdon,2025,Alexandria Township,Annual School Election Ballot Draw 2025,1,read source text,correct,correct,correct,correct,correct,correct,correct,correct,correct,"Vote for Three, 6 candidates"
+4,Hunterdon,2025,West Amwell Township,Annual School Election Ballot Draw 2025,1,read source text,correct,correct,correct,correct,correct,correct,correct,correct,correct,
+5,Hunterdon,2026,Clinton Township/Lebanon Borough,UnOfficial School Board Candidates 2026,1,read source text,correct,correct,correct,correct,correct,correct,correct,correct,correct,"joint municipality contest name preserved"
+6,Bergen,2023,Alpine,b2023-Alpine.pdf,1,rendered ballot image,correct,correct,correct,correct,correct,correct,correct,correct,not-a-district-name,"2 seats 2 candidates; companion unexpired contest shows NO PETITION FILED"
+7,Bergen,2023,Teaneck,teaneck-2023.pdf,1,rendered ballot image,correct,correct,correct,correct,correct,correct,correct,correct,not-a-district-name,"Vote for Three, 6 candidates across 2 bracket columns"
+8,Bergen,2024,Alpine,b2024-Alpine.pdf,1,rendered ballot image,correct,correct,correct,correct,correct,correct,correct,correct,not-a-district-name,"portrait layout, unlike 2023"
+9,Bergen,2024,Ridgewood,b2024-Ridgewood.pdf,1,rendered ballot image,correct,correct,correct,correct,correct,correct,correct,correct,not-a-district-name,"UNEXPIRED TERM 1 YEAR - VOTE FOR ONE correctly separated from the full-term contest"
+10,Bergen,2025,Dumont,b2025-Dumont.pdf,1,rendered ballot image,correct,correct,correct,correct,correct,correct,correct,correct,not-a-district-name,"3 seats 2 candidates; third column prints NO PETITION FILED"
+11,Essex,2022,Borough of Caldwell,sb-2022-general.pdf,3,rendered ballot image,correct,correct,correct,correct,correct,correct,correct,correct,not-a-district-name,"English-only page; 5 candidates for 2 seats"
+12,Essex,2022,Township of West Orange,sb-2022-general.pdf,26,rendered ballot image,correct,correct,correct,correct,correct,correct,correct,correct,not-a-district-name,
+13,Essex,2023,Borough of Caldwell,sb-2023-general.pdf,5,rendered ballot image,correct,correct,correct,correct,correct,correct,correct,correct,not-a-district-name,"Caldwell-West Caldwell regional; one race printed on two municipal ballots"
+14,Essex,2023,Township of West Orange,sb-2023-general.pdf,33,rendered ballot image,correct,correct,correct,correct,correct,correct,correct,correct,not-a-district-name,
+15,Essex,2025,City of Orange Township,sb-2025-general.pdf,26,rendered ballot image,correct,correct,correct,correct,correct,correct,correct,correct,not-a-district-name,"8 candidates for 3 seats; all 8 names matched exactly"
