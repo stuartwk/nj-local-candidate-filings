@@ -14,7 +14,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from njfilings.capture import MANIFEST_FIELDS, Counts, capture
+from njfilings.capture import (MANIFEST_FIELDS, Counts, capture,
+                               import_file, sha256_bytes)
 from njfilings.sources import Document
 
 PDF = b"%PDF-1.4 pretend this is a ballot\n%%EOF\n"
@@ -307,3 +308,43 @@ def test_capture_never_opens_what_it_saves(tmp_path):
     junk = b"\x00\x01 this is not a PDF and capture must not care"
     run([doc()], tmp_path, transport=responder(body=junk))
     assert (tmp_path / "cache/testshire/2026/a.pdf").read_bytes() == junk
+
+
+# --- documents a human had to fetch -------------------------------------
+
+def test_import_caches_the_bytes_and_records_where_they_came_from(tmp_path):
+    src = tmp_path / "downloaded.pdf"
+    src.write_bytes(PDF)
+    d = Document("monmouth", "2026", "candidate_list",
+                 "https://clerk.example/boe.pdf", "school-board-candidates.pdf")
+
+    digest = import_file(src, d, root=tmp_path, verbose=False)
+
+    cached = tmp_path / "cache/monmouth/2026/school-board-candidates.pdf"
+    assert cached.read_bytes() == PDF
+    assert digest == sha256_bytes(PDF)
+
+    (row,) = manifest_rows(tmp_path)
+    assert row["url"] == "https://clerk.example/boe.pdf"   # where it came from
+    assert row["http_status"] == ""                        # we never asked
+    assert row["note"] == "manually downloaded"            # and we say so
+    assert row["sha256"] == digest
+    assert row["bytes"] == str(len(PDF))
+
+
+def test_an_imported_document_counts_as_held(tmp_path):
+    """Having been hand-downloaded does not make it less ours: a later run must
+    not try to re-fetch what is already on disk."""
+    src = tmp_path / "downloaded.pdf"
+    src.write_bytes(PDF)
+    d = Document("monmouth", "2026", "candidate_list",
+                 "https://clerk.example/boe.pdf", "school-board-candidates.pdf")
+    import_file(src, d, root=tmp_path, verbose=False)
+
+    seen: list[str] = []
+    counts = capture([d], root=tmp_path, delay=0, verbose=False,
+                     transport=responder(log=seen))
+
+    assert seen == []                     # no request went out
+    assert counts.skipped == 1
+    assert len(manifest_rows(tmp_path)) == 1   # and no heartbeat row

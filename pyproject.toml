@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 capture = "njfilings.capture:main"
+archive = "njfilings.archive:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
