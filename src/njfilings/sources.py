@@ -43,6 +43,11 @@ class Document:
     url: str
     filename: str     # basename under cache/<county>/<year>/
     label: str = ""   # human note, e.g. the municipality; never parsed
+    # Whether this document is about school boards at all. Atlantic and Union
+    # each publish a general-election candidate list covering every office,
+    # captured because it is equally ephemeral but outside the current scope.
+    # Coverage must not count it as a school-board document it failed to read.
+    school_board: bool = True
 
     @property
     def local_path(self) -> str:
@@ -258,7 +263,8 @@ _ATLANTIC = [
 
 
 def atlantic_documents() -> list[Document]:
-    return [Document("atlantic", year, doc_type, url, filename)
+    return [Document("atlantic", year, doc_type, url, filename,
+                     school_board=filename != "general-candidates.pdf")
             for year, doc_type, url, filename in _ATLANTIC]
 
 
@@ -305,7 +311,8 @@ _UNION = [
 
 
 def union_documents() -> list[Document]:
-    return [Document("union", year, doc_type, url, filename)
+    return [Document("union", year, doc_type, url, filename,
+                     school_board=filename != "general-candidates.pdf")
             for year, doc_type, url, filename in _UNION]
 
 
