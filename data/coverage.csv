@@ -1,0 +1,36 @@
+county,year,status,documents_declared,documents_held,contests,seats,candidates,seats_unfilled,candidates_per_seat,uncontested_rate,unfilled_observed,reason
+atlantic,2026,complete,1,1,30,59,62,12,1.05,0.73,all,
+bergen,2019,gap,0,0,0,0,0,0,,,,only 2 of ~70 municipalities archived
+bergen,2020,gap,0,0,0,0,0,0,,,,archived copies redirect
+bergen,2021,gap,0,0,0,0,0,0,,,,archived copies redirect
+bergen,2022,gap,0,0,0,0,0,0,,,,no captures found
+bergen,2023,no-extractor,70,69,0,0,0,0,,,,69 sample_ballot held; no extractor yet (1 of 70 not captured)
+bergen,2024,no-extractor,70,70,0,0,0,0,,,,70 sample_ballot held; no extractor yet
+bergen,2025,no-extractor,73,73,0,0,0,0,,,,73 sample_ballot held; no extractor yet
+burlington,2025,no-extractor,1,1,0,0,0,0,,,,1 sample_ballot held; no extractor yet
+burlington,2026,no-extractor,1,1,0,0,0,0,,,,1 sample_ballot held; no extractor yet
+cape-may,2022,no-extractor,1,1,0,0,0,0,,,,1 sample_ballot held; no extractor yet
+cape-may,2023,no-extractor,1,1,0,0,0,0,,,,1 sample_ballot held; no extractor yet
+essex,2017,gap,0,0,0,0,0,0,,,,archived only; live URL gone
+essex,2018,gap,0,0,0,0,0,0,,,,archived only; live URL gone
+essex,2020,gap,0,0,0,0,0,0,,,,archived only; live URL gone
+essex,2021,gap,0,0,0,0,0,0,,,,no countywide PDF found
+essex,2022,not-captured,1,0,0,0,0,0,,,,"1 document(s) declared, none on disk"
+essex,2023,not-captured,1,0,0,0,0,0,,,,"1 document(s) declared, none on disk"
+essex,2024,gap,0,0,0,0,0,0,,,,no countywide PDF found under any filename
+essex,2025,not-captured,1,0,0,0,0,0,,,,"1 document(s) declared, none on disk"
+essex,2026,no-extractor,1,1,0,0,0,0,,,,1 sample_ballot held; no extractor yet
+gloucester,2026,no-extractor,229,229,0,0,0,0,,,,229 sample_ballot held; no extractor yet
+hunterdon,2022,gap,0,0,0,0,0,0,,,,"'2022GeneralSchoolcandidates.pdf' — seen, DocumentCenter id not recorded"
+hunterdon,2023,complete,1,1,34,67,88,4,1.31,0.53,all,
+hunterdon,2024,complete,1,1,40,72,94,6,1.31,0.57,all,
+hunterdon,2025,complete,2,2,37,70,80,12,1.14,0.68,all,
+hunterdon,2026,complete,1,1,37,70,72,8,1.03,0.81,all,
+morris,2021,unread-format,1,1,0,0,0,0,,,,1 document(s) held; this county's extractor does not handle this era
+morris,2022,unread-format,1,1,0,0,0,0,,,,1 document(s) held; this county's extractor does not handle this era
+morris,2023,complete,1,1,46,102,155,2,1.52,0.48,all,
+morris,2024,complete,1,1,47,104,129,4,1.24,0.57,all,
+morris,2025,complete,1,1,49,109,131,8,1.20,0.61,all,
+morris,2026,complete,1,1,48,105,128,6,1.22,0.71,all,
+salem,2026,no-extractor,16,16,0,0,0,0,,,,16 sample_ballot held; no extractor yet
+union,2026,complete,1,1,18,48,59,1,1.23,0.61,all,
