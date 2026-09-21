@@ -23,7 +23,7 @@ from pathlib import Path
 from .capture import PROJECT_ROOT
 from .model import CSV_FIELDS, Contest, sort_key, to_row
 from .sources import Document, documents
-from .extract import atlantic, hunterdon, morris, union
+from .extract import atlantic, hunterdon, morris, salem, union
 
 # A county appears here once it has an extractor, paired with the documents that
 # extractor understands.
@@ -41,6 +41,7 @@ EXTRACTORS = {
     "morris": (morris.extract, {"school-board-candidates.pdf"}),
     "atlantic": (atlantic.extract, {"school-board-candidates.pdf"}),
     "union": (union.extract, {"school-board-candidates.pdf"}),
+    "salem": (salem.extract, None),   # None: every declared document
 }
 
 
@@ -53,7 +54,10 @@ def build(root: Path = PROJECT_ROOT, counties: list[str] | None = None,
 
     for doc in documents(wanted):
         extractor, filenames = EXTRACTORS[doc.county]
-        if doc.doc_type != "candidate_list" or doc.filename not in filenames:
+        if filenames is None:
+            if not doc.school_board:
+                continue
+        elif doc.doc_type != "candidate_list" or doc.filename not in filenames:
             continue
         path = root / doc.local_path
         if not path.is_file():
@@ -82,7 +86,48 @@ def build(root: Path = PROJECT_ROOT, counties: list[str] | None = None,
         for doc in missing:
             print(f"  {doc.county} {doc.year} {doc.filename}", file=sys.stderr)
 
-    return sorted(contests, key=sort_key)
+    return sorted(merge_duplicates(contests), key=sort_key)
+
+
+
+def merge_duplicates(contests: list[Contest]) -> list[Contest]:
+    """Collapse one contest printed on several ballots, keeping every page.
+
+    Only counties that publish per-municipality ballots have this problem, and
+    it needs care, because a shared district does not imply a shared contest.
+    Salem prints three different arrangements:
+
+      * Salem City's east and west ward ballots carry the *same* contest. Two
+        rows would double its seats and its candidates.
+      * Pittsgrove and Elmer share `Pittsgrove/Elmer School Board` and elect its
+        three members across both. Also one contest.
+      * Penns Grove and Carneys Point also share a board, but each elects its
+        own single seat — Carneys Point's drew two candidates and Penns Grove's
+        drew nobody. Merging those would erase an unfilled seat.
+
+    What separates them is the content: same district, same seats, same people
+    means one contest printed twice. So the key is the contest itself, and the
+    municipality joins it only where no district is named — otherwise two towns
+    that each had one seat and no candidates would collapse into one.
+    """
+    merged: dict[tuple, Contest] = {}
+    order: list[tuple] = []
+    for contest in contests:
+        identity = (
+            contest.county, contest.year, contest.district_name,
+            contest.term_years, contest.is_unexpired, contest.seats_available,
+            tuple(sorted(c.name.upper() for c in contest.candidates_filed)),
+            contest.seats_unfilled_stated,
+            # a contest with no district named is local, and two local contests
+            # in different towns are never the same contest however alike
+            contest.municipality if contest.district_name is None else None,
+        )
+        if identity in merged:
+            merged[identity] = merged[identity].merged_with(contest)
+        else:
+            order.append(identity)
+            merged[identity] = contest
+    return [merged[key] for key in order]
 
 
 def write(contests: list[Contest], path: Path) -> None:
