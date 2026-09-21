@@ -58,7 +58,15 @@ def items_of(page) -> list[Item]:
                 continue
             out.append(Item(text, line["bbox"][0], line["bbox"][1],
                             spans[0]["font"], spans[0]["size"]))
-    return sorted(out, key=lambda i: (i.y, i.x))
+    # Ballots layer text: the same line is often drawn twice at the same spot,
+    # which would double a contest and its candidates.
+    seen, unique = set(), []
+    for item in sorted(out, key=lambda i: (i.y, i.x)):
+        key = (round(item.x, 1), round(item.y, 1), item.text)
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique
 
 
 def nearest_above(items: list[Item], anchor: Item, font: str,
