@@ -82,6 +82,7 @@ def page_texts(path: Path) -> list[str]:
 MORRIS_TITLE_RE = re.compile(
     r"MEMBER OF THE (?:REGIONAL )?BOARD OF EDUCATION", re.I)
 ATLANTIC_SEATS_RE = re.compile(r"^V\d+$", re.I | re.M)
+SALEM_SECTION_RE = re.compile(r"OFFICIAL SCHOOL ELECTION", re.I)
 UNION_HEADER_RE = re.compile(
     r"\d+\s*YEAR\s*TERM\s*[-–—]?\s*(?:UNEXPIRED\s*)?VOTE\s*FOR\s+[A-Z]+", re.I)
 
@@ -135,6 +136,15 @@ def enumerate_rows(county: str, text: str, contests: list[Contest]) -> list[str]
     if county == "atlantic":
         return _compare(len(ATLANTIC_SEATS_RE.findall(flat)), filings + unfilled,
                         "seat cells (V1/V2/V3)", "filings and unfilled seats")
+    if county == "salem":
+        # Every ballot prints one school section, and a contest shared by two
+        # municipalities is printed on both. So the sections must equal the
+        # contests plus the duplicate printings they were merged from — which
+        # checks the merge as well as the parse.
+        printings = len(contests) + sum(len(c.also_on) for c in contests)
+        return _compare(len(SALEM_SECTION_RE.findall(flat)), printings,
+                        "school sections across the ballots",
+                        "contests and merged duplicates")
     if county == "union":
         return _compare(len(UNION_HEADER_RE.findall(flat)), len(contests),
                         "contest headers", "contests")
@@ -153,6 +163,11 @@ def _compare(found: int, recorded: int, what: str, against: str) -> list[str]:
 def enumerate_document(text: str, contests: list[Contest]) -> list[str]:
     """Document-wide counts that must agree. Returns complaints.
 
+    Both checks here assume the document is entirely about school boards. A
+    sample ballot is not — it carries every office on it — so each is skipped
+    where the document shows it is a ballot. `enumerate_rows` carries the weight
+    for those counties instead.
+
     Takes the text rather than a path so it can be tested against literal
     documents, and so a failure is attributable to the check rather than to
     text extraction.
@@ -161,14 +176,23 @@ def enumerate_document(text: str, contests: list[Contest]) -> list[str]:
 
     emails = len(EMAIL_RE.findall(text))
     filed = sum(len(c.candidates_filed) for c in contests)
-    if emails != filed:
+    # A ballot lists nobody's email, so the invariant simply does not apply
+    # there. Applying it anyway would report every ballot county as broken.
+    if emails and emails != filed:
         issues.append(f"{emails} email addresses in the document but {filed} "
                       f"filings extracted")
 
-    markers = len(MARKER_RE.findall(text))
-    unfilled = sum(c.seats_unfilled_stated or 0 for c in contests)
-    if markers != unfilled:
-        issues.append(f"{markers} unfilled-seat markers but {unfilled} recorded")
+    # On a ballot the school election is one section among the municipal
+    # contests, and those print unfilled-seat markers of their own — Salem's
+    # ballots carry 30 where the school contests account for 8. A document-wide
+    # count only means something where the whole document is about school
+    # boards, which is to say a candidate list.
+    if not SALEM_SECTION_RE.search(text):
+        markers = len(MARKER_RE.findall(text))
+        unfilled = sum(c.seats_unfilled_stated or 0 for c in contests)
+        if markers != unfilled:
+            issues.append(f"{markers} unfilled-seat markers but "
+                          f"{unfilled} recorded")
 
     return issues
 
@@ -256,13 +280,13 @@ def check_record(contest: Contest, pages: list[str]) -> dict[str, object]:
         # the cited page reports a correct record as wrong.
         following = pages[index + 1] if index + 1 < len(pages) else ""
         return _check_tabular(contest, page, following)
-    if contest.county in ("atlantic", "union"):
+    if contest.county in ("atlantic", "union", "salem"):
         return _check_by_presence(contest, page)
     return _check_outline(contest, page)
 
 
 def _check_by_presence(contest: Contest, page: str) -> dict[str, object]:
-    """Atlantic and Union: confirm the record's own values appear on its page.
+    """Atlantic, Union and Salem: confirm the record's values appear on its page.
 
     Weaker than the block-scoped checks, deliberately. Atlantic states seats as
     `V3` and Union as `VOTE FOR THREE`, neither of which sits next to the
@@ -275,6 +299,11 @@ def _check_by_presence(contest: Contest, page: str) -> dict[str, object]:
     if contest.county == "atlantic":
         seats_ok = re.search(rf"\bV{contest.seats_available}\b", flat) is not None
         term_ok = re.search(rf"{contest.term_years}\s*yr", flat, re.I) is not None
+    elif contest.county == "salem":
+        word = SEAT_WORDS.get(contest.seats_available, "")
+        seats_ok = re.search(rf"Vote for\s+{word}\b", flat, re.I) is not None
+        term_ok = re.search(rf"{contest.term_years}\s*Year\s*Term", flat,
+                            re.I) is not None
     else:
         word = SEAT_WORDS.get(contest.seats_available, "")
         seats_ok = re.search(rf"VOTE\s*FOR\s+{word}\b", flat, re.I) is not None
@@ -424,6 +453,19 @@ def transcription_sample(contests: list[Contest], root: Path, size: int,
     return rows
 
 
+def _paths_for(contests: list[Contest], root: Path) -> list[Path]:
+    """Every cached document the contests in a cell were read from, including
+    the ones duplicates were merged away from."""
+    wanted = {c.source_document for c in contests}
+    for contest in contests:
+        wanted.update(citation.split("#")[0] for citation in contest.also_on)
+    paths = []
+    for doc in documents([contests[0].county], [contests[0].year]):
+        if doc.filename in wanted and (root / doc.local_path).is_file():
+            paths.append(root / doc.local_path)
+    return paths
+
+
 def _path_for(contest: Contest, root: Path) -> Path | None:
     for doc in documents([contest.county], [contest.year]):
         if doc.filename == contest.source_document:
@@ -463,11 +505,13 @@ def main(argv: list[str] | None = None) -> int:
 
     for key in sorted(by_document):
         group = by_document[key]
-        path = _path_for(group[0], args.root)
-        if path is None:
+        paths = _paths_for(group, args.root)
+        if not paths:
             print(f"  {key[0]} {key[1]}: source not cached, skipped")
             continue
-        text = "\n".join(page_texts(path))
+        # a per-municipality county is dozens of documents per cell, and the
+        # counts have to be taken over all of them
+        text = "\n".join(t for path in paths for t in page_texts(path))
         issues = enumerate_document(text, group)
         issues += enumerate_rows(key[0], text, group)
         if key[0] == "morris":

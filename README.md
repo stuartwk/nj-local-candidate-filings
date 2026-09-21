@@ -7,7 +7,7 @@ The headline measure is **candidates per seat**: candidates filed divided by
 seats available, for a county and year. A value near 1.0 means voters had
 essentially no choice.
 
-**Current coverage: 4 of New Jersey's 21 counties, 386 contests.** This is not a
+**Current coverage: 5 of New Jersey's 21 counties, 400 contests.** This is not a
 statewide dataset and nothing here should be described as a New Jersey figure.
 
 | | |
@@ -20,13 +20,17 @@ statewide dataset and nothing here should be described as a New Jersey figure.
 ## What was counted
 
 Every school board contest on the November general election ballot in the
-counties listed below, taken from the **candidate filing lists** county clerks
-publish after the July filing deadline — not from ballots or results.
+counties listed below, taken from two kinds of document and never from results.
 
-That choice matters. A filing list states the number of seats up for election
-independently of how many people ran, and prints the seats nobody filed for.
-Results cannot do either: they cannot tell you a contest existed that drew no
-candidates, and they cannot tell you three people ran for five seats.
+**Candidate filing lists** (Atlantic, Hunterdon, Morris, Union) are what county
+clerks publish after the July filing deadline. **Sample ballots** (Salem) are
+what voters receive, one per municipality, with the school election as one
+section among the municipal contests.
+
+Both state the number of seats up for election independently of how many people
+ran, and both print the seats nobody filed for. Results can do neither: they
+cannot tell you a contest existed that drew no candidates, and they cannot tell
+you three people ran for five seats.
 
 ```
 county       year   contests  seats  cands  per seat  uncontested
@@ -39,8 +43,12 @@ morris       2023         46    102    155      1.52          48%
 morris       2024         47    104    129      1.24          57%
 morris       2025         49    109    131      1.20          61%
 morris       2026         48    105    128      1.22          71%
+salem        2026         14     32     27      0.84          79%
 union        2026         18     48     59      1.23          61%
 ```
+
+Salem is the first county below 1.0: **fewer candidates than seats**, with a
+quarter of its school board seats drawing nobody at all.
 
 Over the two counties covered in **every** year, candidates per seat falls
 1.44 → 1.27 → 1.18 → 1.14 from 2023 to 2026, while the share of uncontested
@@ -80,7 +88,7 @@ withdrawn candidate is not running. Five appear in the current data.
 
 ## Known limitations
 
-- **Coverage is uneven and small.** Four counties, and only 2026 for two of
+- **Coverage is uneven and small.** Five counties, and only 2026 for three of
   them. `data/coverage.csv` gives every county-year a status and a reason.
 - **2026 lists are unofficial.** Hunterdon's is headed "UnOfficial"; Union's is
   watermarked "REFRAIN FROM PUBLISHING LITERATURE UNTIL POSITIONS ARE CONFIRMED
@@ -94,10 +102,16 @@ withdrawn candidate is not running. Five appear in the current data.
   "Member of the Board of Education" and distinguishes regional boards;
   Atlantic's document states no office title at all, so the label there is this
   project's, not a quotation.
-- **464 captured documents are not yet read.** Bergen, Gloucester, Salem,
-  Burlington, Cape May and Essex have no extractor at all, and Morris 2021-2022
-  use an older layout its extractor does not handle. They are absent from the
-  dataset, not empty in it.
+- **448 captured documents are not yet read.** Bergen, Gloucester, Burlington,
+  Cape May and Essex have no extractor at all, and Morris 2021-2022 use an older
+  layout its extractor does not handle. They are absent from the dataset, not
+  empty in it.
+- **A shared school district is not always a shared contest.** Where two
+  municipalities elect one board between them, the contest is printed on both
+  ballots and recorded once, with the second printing cited in `also_on`. Where
+  they each elect their own seat to a shared board, those are two contests. Salem
+  contains both arrangements; the distinction is made on the contest's contents,
+  not on its district's name.
 - **Eleven of the twenty-one county sites refuse HTTP clients** outright. See
   `notes/inventory.md`.
 
