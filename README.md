@@ -7,7 +7,7 @@ The headline measure is **candidates per seat**: candidates filed divided by
 seats available, for a county and year. A value near 1.0 means voters had
 essentially no choice.
 
-**Current coverage: 5 of New Jersey's 21 counties, 400 contests.** This is not a
+**Current coverage: 6 of New Jersey's 21 counties, 435 contests.** This is not a
 statewide dataset and nothing here should be described as a New Jersey figure.
 
 | | |
@@ -23,9 +23,9 @@ Every school board contest on the November general election ballot in the
 counties listed below, taken from two kinds of document and never from results.
 
 **Candidate filing lists** (Atlantic, Hunterdon, Morris, Union) are what county
-clerks publish after the July filing deadline. **Sample ballots** (Salem) are
-what voters receive, one per municipality, with the school election as one
-section among the municipal contests.
+clerks publish after the July filing deadline. **Sample ballots** (Gloucester,
+Salem) are what voters receive — one per municipality in Salem, one per voting
+district in Gloucester — with the school election among the municipal contests.
 
 Both state the number of seats up for election independently of how many people
 ran, and both print the seats nobody filed for. Results can do neither: they
@@ -35,6 +35,7 @@ you three people ran for five seats.
 ```
 county       year   contests  seats  cands  per seat  uncontested
 atlantic     2026         30     59     62      1.05          73%
+gloucester   2026         35     78     84      1.08          76%
 hunterdon    2023         34     67     88      1.31          53%
 hunterdon    2024         40     72     94      1.31          57%
 hunterdon    2025         37     70     80      1.14          68%
@@ -47,8 +48,9 @@ salem        2026         14     32     27      0.84          79%
 union        2026         18     48     59      1.23          61%
 ```
 
-Salem is the first county below 1.0: **fewer candidates than seats**, with a
-quarter of its school board seats drawing nobody at all.
+Across the six counties covered for 2026 the range is 0.84 to 1.23, and **four
+of the six sit at or below 1.10**. Salem is below 1.0 outright — fewer candidates
+than seats, with a quarter of its school board seats drawing nobody.
 
 Over the two counties covered in **every** year, candidates per seat falls
 1.44 → 1.27 → 1.18 → 1.14 from 2023 to 2026, while the share of uncontested
@@ -88,7 +90,7 @@ withdrawn candidate is not running. Five appear in the current data.
 
 ## Known limitations
 
-- **Coverage is uneven and small.** Five counties, and only 2026 for three of
+- **Coverage is uneven and small.** Six counties, and only 2026 for four of
   them. `data/coverage.csv` gives every county-year a status and a reason.
 - **2026 lists are unofficial.** Hunterdon's is headed "UnOfficial"; Union's is
   watermarked "REFRAIN FROM PUBLISHING LITERATURE UNTIL POSITIONS ARE CONFIRMED
@@ -102,10 +104,12 @@ withdrawn candidate is not running. Five appear in the current data.
   "Member of the Board of Education" and distinguishes regional boards;
   Atlantic's document states no office title at all, so the label there is this
   project's, not a quotation.
-- **448 captured documents are not yet read.** Bergen, Gloucester, Burlington,
-  Cape May and Essex have no extractor at all, and Morris 2021-2022 use an older
-  layout its extractor does not handle. They are absent from the dataset, not
-  empty in it.
+- **219 captured documents are not yet read.** Bergen, Burlington, Cape May and
+  Essex have no working extractor, and Morris 2021-2022 use an older layout its
+  extractor does not handle. They are absent from the dataset, not empty in it.
+  Burlington's extractor exists but is not registered: its ballots place a
+  contest's heading inconsistently within its cell, and about a fifth of its
+  contests come out with candidate counts that contradict themselves.
 - **A shared school district is not always a shared contest.** Where two
   municipalities elect one board between them, the contest is printed on both
   ballots and recorded once, with the second printing cited in `also_on`. Where

@@ -23,7 +23,7 @@ from pathlib import Path
 from .capture import PROJECT_ROOT
 from .model import CSV_FIELDS, Contest, sort_key, to_row
 from .sources import Document, documents
-from .extract import atlantic, hunterdon, morris, salem, union
+from .extract import atlantic, gloucester, hunterdon, morris, salem, union
 
 # A county appears here once it has an extractor, paired with the documents that
 # extractor understands.
@@ -42,6 +42,7 @@ EXTRACTORS = {
     "atlantic": (atlantic.extract, {"school-board-candidates.pdf"}),
     "union": (union.extract, {"school-board-candidates.pdf"}),
     "salem": (salem.extract, None),   # None: every declared document
+    "gloucester": (gloucester.extract, None),
 }
 
 

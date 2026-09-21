@@ -83,6 +83,11 @@ MORRIS_TITLE_RE = re.compile(
     r"MEMBER OF THE (?:REGIONAL )?BOARD OF EDUCATION", re.I)
 ATLANTIC_SEATS_RE = re.compile(r"^V\d+$", re.I | re.M)
 SALEM_SECTION_RE = re.compile(r"OFFICIAL SCHOOL ELECTION", re.I)
+GLOUCESTER_BOARD_RE = re.compile(r"^BOARD OF EDUCATION$", re.I | re.M)
+# Counties whose source is a sample ballot rather than a candidate list. A
+# ballot carries every office on it, so a count taken over the whole document
+# is not a count of school board anything.
+BALLOT_COUNTIES = {"salem", "gloucester"}
 UNION_HEADER_RE = re.compile(
     r"\d+\s*YEAR\s*TERM\s*[-–—]?\s*(?:UNEXPIRED\s*)?VOTE\s*FOR\s+[A-Z]+", re.I)
 
@@ -145,6 +150,14 @@ def enumerate_rows(county: str, text: str, contests: list[Contest]) -> list[str]
         return _compare(len(SALEM_SECTION_RE.findall(flat)), printings,
                         "school sections across the ballots",
                         "contests and merged duplicates")
+    if county == "gloucester":
+        # Each ballot prints its school contests once, and every district of a
+        # municipality carries the same ones — 313 printings for 35 contests.
+        # Counting the headings checks the merge as much as the parse.
+        printings = len(contests) + sum(len(c.also_on) for c in contests)
+        return _compare(len(GLOUCESTER_BOARD_RE.findall(flat)), printings,
+                        "board headings across the ballots",
+                        "contests and merged duplicates")
     if county == "union":
         return _compare(len(UNION_HEADER_RE.findall(flat)), len(contests),
                         "contest headers", "contests")
@@ -160,7 +173,8 @@ def _compare(found: int, recorded: int, what: str, against: str) -> list[str]:
     return [f"{found} {what} in the document but {recorded} {against} recorded"]
 
 
-def enumerate_document(text: str, contests: list[Contest]) -> list[str]:
+def enumerate_document(text: str, contests: list[Contest],
+                       county: str = "") -> list[str]:
     """Document-wide counts that must agree. Returns complaints.
 
     Both checks here assume the document is entirely about school boards. A
@@ -187,7 +201,7 @@ def enumerate_document(text: str, contests: list[Contest]) -> list[str]:
     # ballots carry 30 where the school contests account for 8. A document-wide
     # count only means something where the whole document is about school
     # boards, which is to say a candidate list.
-    if not SALEM_SECTION_RE.search(text):
+    if county not in BALLOT_COUNTIES and not SALEM_SECTION_RE.search(text):
         markers = len(MARKER_RE.findall(text))
         unfilled = sum(c.seats_unfilled_stated or 0 for c in contests)
         if markers != unfilled:
@@ -280,7 +294,7 @@ def check_record(contest: Contest, pages: list[str]) -> dict[str, object]:
         # the cited page reports a correct record as wrong.
         following = pages[index + 1] if index + 1 < len(pages) else ""
         return _check_tabular(contest, page, following)
-    if contest.county in ("atlantic", "union", "salem"):
+    if contest.county in ("atlantic", "union", "salem", "gloucester"):
         return _check_by_presence(contest, page)
     return _check_outline(contest, page)
 
@@ -299,6 +313,11 @@ def _check_by_presence(contest: Contest, page: str) -> dict[str, object]:
     if contest.county == "atlantic":
         seats_ok = re.search(rf"\bV{contest.seats_available}\b", flat) is not None
         term_ok = re.search(rf"{contest.term_years}\s*yr", flat, re.I) is not None
+    elif contest.county == "gloucester":
+        word = SEAT_WORDS.get(contest.seats_available, "")
+        seats_ok = re.search(rf"VOTE FOR\s+{word}\b", flat, re.I) is not None
+        term_ok = re.search(rf"\({contest.term_years}\)\s*YEARS?", flat,
+                            re.I) is not None
     elif contest.county == "salem":
         word = SEAT_WORDS.get(contest.seats_available, "")
         seats_ok = re.search(rf"Vote for\s+{word}\b", flat, re.I) is not None
@@ -512,7 +531,7 @@ def main(argv: list[str] | None = None) -> int:
         # a per-municipality county is dozens of documents per cell, and the
         # counts have to be taken over all of them
         text = "\n".join(t for path in paths for t in page_texts(path))
-        issues = enumerate_document(text, group)
+        issues = enumerate_document(text, group, county=key[0])
         issues += enumerate_rows(key[0], text, group)
         if key[0] == "morris":
             issues += enumerate_morris(text, group)
