@@ -15,7 +15,7 @@ import pytest
 
 from njfilings.extract.hunterdon import parse
 from njfilings.validate import (check_record, enumerate_document,
-                                enumerate_municipalities)
+                                enumerate_municipalities, enumerate_rows)
 
 DOCUMENT = """\
 HUNTERDON COUNTY
@@ -85,17 +85,37 @@ def test_an_invented_candidate_is_noticed(contests):
 
 
 def test_a_duplicated_contest_is_noticed(contests):
-    issues = enumerate_document(DOCUMENT, contests + contests[:1])
-    assert any("contest-shaped" in issue for issue in issues)
+    doubled = contests + contests[:1]
+    # it duplicates the contest's candidates too, so the filings count breaks
+    assert any("email" in i for i in enumerate_document(DOCUMENT, doubled))
+    # and the count of contests no longer matches the contest lines on the page
+    assert any("contest-shaped" in i
+               for i in enumerate_rows("hunterdon", DOCUMENT, doubled))
 
 
-def test_a_town_given_the_wrong_number_of_contests_is_noticed(contests):
-    """The enumeration arm proper: what the source says a town has, versus
-    what the dataset gives it."""
-    broken = [c for c in contests if c.municipality != "BETHLEHEM TOWNSHIP"]
-    issues = enumerate_municipalities(DOCUMENT, broken, how_many=99,
-                                      rng=random.Random(0))
-    assert any("BETHLEHEM TOWNSHIP" in issue for issue in issues)
+def test_each_county_is_counted_in_its_own_unit(contests):
+    """The document's repeating unit differs by county — a contest sentence, a
+    table row, a seats cell, a page. Counting one county's document in another
+    county's unit produces a confident complaint about a correct dataset."""
+    assert enumerate_rows("hunterdon", DOCUMENT, contests) == []
+    # Hunterdon's document has no Morris-style title rows, so asking for them
+    # must complain rather than silently pass
+    assert enumerate_rows("morris", DOCUMENT, contests) != []
+
+
+def test_a_union_page_count_is_checked_against_its_headers():
+    from njfilings.model import Contest
+    page = "\n".join(["BOROUGH OF FANWOOD", "POSITIONS",
+                      "NO PETITION FILED", "3 YEAR TERM- VOTE FOR ONE"])
+    contest = Contest(county="union", year="2026", election_type="general",
+                      municipality="BOROUGH OF FANWOOD", district_name=None,
+                      office="School Board Member", term_years=3,
+                      is_unexpired=False, seats_available=1,
+                      seats_unfilled_stated=1, source_url="u",
+                      source_document="d.pdf", source_page=1)
+    assert enumerate_rows("union", page, [contest]) == []
+    assert enumerate_rows("union", page, [contest, contest]) != []
+
 
 
 # --- transcription notices corruption -------------------------------------

@@ -23,15 +23,24 @@ from pathlib import Path
 from .capture import PROJECT_ROOT
 from .model import CSV_FIELDS, Contest, sort_key, to_row
 from .sources import Document, documents
-from .extract import hunterdon, morris
+from .extract import atlantic, hunterdon, morris, union
 
-# A county appears here once it has an extractor. Everything else is captured
-# but not yet read.
+# A county appears here once it has an extractor, paired with the documents that
+# extractor understands.
+#
+# Naming the filenames is not ceremony. Atlantic and Union each publish a
+# general-election candidate list alongside the school-board one, and both are
+# declared `candidate_list` because both are candidate lists — the difference is
+# scope, not type. Running a school-board parser over the all-offices list
+# invented 27 contests for Union and moved its candidates-per-seat from 1.28 to
+# 2.20 without anything failing.
 EXTRACTORS = {
-    "hunterdon": hunterdon.extract,
-    # 2021-2022 use a different layout and are not handled yet; build reports
-    # them as uncaptured-for-this-extractor rather than guessing.
-    "morris": morris.extract,
+    "hunterdon": (hunterdon.extract, {"school-board-candidates.pdf"}),
+    # Morris 2021-2022 use a different layout and are not handled yet; build
+    # reports them as extracting nothing rather than guessing.
+    "morris": (morris.extract, {"school-board-candidates.pdf"}),
+    "atlantic": (atlantic.extract, {"school-board-candidates.pdf"}),
+    "union": (union.extract, {"school-board-candidates.pdf"}),
 }
 
 
@@ -43,15 +52,15 @@ def build(root: Path = PROJECT_ROOT, counties: list[str] | None = None,
     empty: list[Document] = []
 
     for doc in documents(wanted):
-        if doc.doc_type != "candidate_list":
+        extractor, filenames = EXTRACTORS[doc.county]
+        if doc.doc_type != "candidate_list" or doc.filename not in filenames:
             continue
         path = root / doc.local_path
         if not path.is_file():
             missing.append(doc)
             continue
-        found = EXTRACTORS[doc.county](
-            path, year=doc.year, source_url=doc.url,
-            source_document=doc.filename)
+        found = extractor(path, year=doc.year, source_url=doc.url,
+                          source_document=doc.filename)
         contests.extend(found)
         if verbose:
             note = "  <-- extracted nothing" if not found else ""

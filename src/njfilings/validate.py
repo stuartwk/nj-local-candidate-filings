@@ -81,6 +81,9 @@ def page_texts(path: Path) -> list[str]:
 
 MORRIS_TITLE_RE = re.compile(
     r"MEMBER OF THE (?:REGIONAL )?BOARD OF EDUCATION", re.I)
+ATLANTIC_SEATS_RE = re.compile(r"^V\d+$", re.I | re.M)
+UNION_HEADER_RE = re.compile(
+    r"\d+\s*YEAR\s*TERM\s*[-–—]?\s*(?:UNEXPIRED\s*)?VOTE\s*FOR\s+[A-Z]+", re.I)
 
 
 def _flatten(text: str) -> str:
@@ -114,6 +117,39 @@ def enumerate_morris(text: str, contests: list[Contest]) -> list[str]:
     return issues
 
 
+def enumerate_rows(county: str, text: str, contests: list[Contest]) -> list[str]:
+    """One count per county, of whatever unit that county's document repeats.
+
+    Each list is built from a different unit — a contest sentence, a table row,
+    a seats cell, a page — so the check has to know which. Getting this wrong
+    produces a confident complaint about a correct dataset, which is worse than
+    no check at all.
+    """
+    flat = _flatten(text)
+    filings = sum(len(c.candidates_filed) for c in contests)
+    unfilled = sum(c.seats_unfilled_stated or 0 for c in contests)
+
+    if county == "morris":
+        return _compare(len(MORRIS_TITLE_RE.findall(flat)), filings + unfilled,
+                        "contest-title rows", "filings and unfilled seats")
+    if county == "atlantic":
+        return _compare(len(ATLANTIC_SEATS_RE.findall(flat)), filings + unfilled,
+                        "seat cells (V1/V2/V3)", "filings and unfilled seats")
+    if county == "union":
+        return _compare(len(UNION_HEADER_RE.findall(flat)), len(contests),
+                        "contest headers", "contests")
+    # a county whose document puts each contest on its own line
+    lines = [l for l in text.splitlines() if CONTEST_ISH.search(l)
+             and not EMAIL_RE.search(l)]
+    return _compare(len(lines), len(contests), "contest-shaped lines", "contests")
+
+
+def _compare(found: int, recorded: int, what: str, against: str) -> list[str]:
+    if found == recorded:
+        return []
+    return [f"{found} {what} in the document but {recorded} {against} recorded"]
+
+
 def enumerate_document(text: str, contests: list[Contest]) -> list[str]:
     """Document-wide counts that must agree. Returns complaints.
 
@@ -134,15 +170,6 @@ def enumerate_document(text: str, contests: list[Contest]) -> list[str]:
     if markers != unfilled:
         issues.append(f"{markers} unfilled-seat markers but {unfilled} recorded")
 
-    # crude, independent count of contest lines. Only meaningful for a document
-    # that puts a contest on its own line; Morris does not, and has its own
-    # check above.
-    if not MORRIS_TITLE_RE.search(_flatten(text)):
-        lines = [l for l in text.splitlines() if CONTEST_ISH.search(l)
-                 and not EMAIL_RE.search(l)]
-        if len(lines) != len(contests):
-            issues.append(f"{len(lines)} contest-shaped lines but "
-                          f"{len(contests)} contests extracted")
     return issues
 
 
@@ -221,21 +248,60 @@ def check_record(contest: Contest, pages: list[str]) -> dict[str, object]:
     of a table. A single probe would either pass vacuously on one or fail
     wrongly on the other.
     """
-    page = pages[contest.source_page - 1] if contest.source_page and \
-        contest.source_page <= len(pages) else ""
+    index = (contest.source_page or 1) - 1
+    page = pages[index] if 0 <= index < len(pages) else ""
     if contest.county == "morris":
-        return _check_tabular(contest, page)
+        # A contest's rows are contiguous but can run over a page break — six
+        # Montville candidates, five on page 1 and one on page 2. Checking only
+        # the cited page reports a correct record as wrong.
+        following = pages[index + 1] if index + 1 < len(pages) else ""
+        return _check_tabular(contest, page, following)
+    if contest.county in ("atlantic", "union"):
+        return _check_by_presence(contest, page)
     return _check_outline(contest, page)
 
 
-def _check_tabular(contest: Contest, page: str) -> dict[str, object]:
+def _check_by_presence(contest: Contest, page: str) -> dict[str, object]:
+    """Atlantic and Union: confirm the record's own values appear on its page.
+
+    Weaker than the block-scoped checks, deliberately. Atlantic states seats as
+    `V3` and Union as `VOTE FOR THREE`, neither of which sits next to the
+    candidate it governs, so there is no block to scope to. The enumeration
+    counts carry the weight for these two.
+    """
+    flat = re.sub(r"\s+", " ", page.replace("\xa0", " "))
+    municipality_ok = (contest.municipality is None
+                       or contest.municipality in flat)
+    if contest.county == "atlantic":
+        seats_ok = re.search(rf"\bV{contest.seats_available}\b", flat) is not None
+        term_ok = re.search(rf"{contest.term_years}\s*yr", flat, re.I) is not None
+    else:
+        word = SEAT_WORDS.get(contest.seats_available, "")
+        seats_ok = re.search(rf"VOTE\s*FOR\s+{word}\b", flat, re.I) is not None
+        term_ok = re.search(rf"{contest.term_years}\s*YEAR\s*TERM", flat,
+                            re.I) is not None
+    names_ok = all(c.name in flat for c in contest.candidates_filed)
+    checks = [municipality_ok, term_ok, seats_ok, names_ok]
+    return {
+        "municipality_on_page": municipality_ok,
+        "term_on_page": term_ok,
+        "seats_on_page": seats_ok,
+        "names_on_page": names_ok,
+        "verdict": "ok" if all(checks) else "CHECK",
+        "source_excerpt": " / ".join(
+            l.strip() for l in page.splitlines() if l.strip())[:420],
+    }
+
+
+def _check_tabular(contest: Contest, page: str,
+                   following: str = "") -> dict[str, object]:
     """Morris: the four header fields sit on consecutive lines above the
     candidate, so the check is that the row exists in that order."""
     lines = [_flatten(l).strip() for l in page.splitlines()]
     # A candidate's given and family names are on separate lines of the table,
     # so the page has to be flattened across newlines before looking for a whole
     # name — otherwise every Morris record fails for a formatting reason.
-    flat = re.sub(r"\s+", " ", page.replace("\xa0", " "))
+    flat = re.sub(r"\s+", " ", (page + "\n" + following).replace("\xa0", " "))
 
     municipality_ok = bool(contest.municipality) and contest.municipality in flat
     row_ok = False
@@ -278,8 +344,11 @@ def _check_outline(contest: Contest, page: str) -> dict[str, object]:
     # would pass for a seat count belonging to a different town.
     block = re.sub(r"\s+", " ", _block(page, contest))
 
+    # The extractor normalises a town's capitalisation, because the clerk's own
+    # varies within one document (`Stockton Borough-`). Comparing case-sensitively
+    # here reports those records as missing from their own page.
     municipality_ok = (contest.municipality is None
-                       or contest.municipality in page)
+                       or contest.municipality.upper() in page.upper())
     term_ok = (contest.term_years is None
                or re.search(rf"{contest.term_years}\s*Yr", block, re.I) is not None)
     seats_ok = (contest.seats_available is None
@@ -311,8 +380,9 @@ def _block(page: str, contest: Contest, span: int = 60) -> str:
     be mistaken for a boundary.
     """
     lines = [l.strip() for l in page.splitlines() if l.strip()]
-    anchor = contest.municipality or contest.district_name or ""
-    start = next((i for i, l in enumerate(lines) if anchor and anchor in l), None)
+    anchor = (contest.municipality or contest.district_name or "").upper()
+    start = next((i for i, l in enumerate(lines)
+                  if anchor and anchor in l.upper()), None)
     if start is None:
         return ""
     out = [lines[start]]
@@ -399,9 +469,10 @@ def main(argv: list[str] | None = None) -> int:
             continue
         text = "\n".join(page_texts(path))
         issues = enumerate_document(text, group)
+        issues += enumerate_rows(key[0], text, group)
         if key[0] == "morris":
             issues += enumerate_morris(text, group)
-        else:
+        elif key[0] == "hunterdon":
             issues += enumerate_municipalities(text, group,
                                                args.municipalities, rng)
         if issues:
