@@ -23,12 +23,15 @@ from pathlib import Path
 from .capture import PROJECT_ROOT
 from .model import CSV_FIELDS, Contest, sort_key, to_row
 from .sources import Document, documents
-from .extract import hunterdon
+from .extract import hunterdon, morris
 
 # A county appears here once it has an extractor. Everything else is captured
 # but not yet read.
 EXTRACTORS = {
     "hunterdon": hunterdon.extract,
+    # 2021-2022 use a different layout and are not handled yet; build reports
+    # them as uncaptured-for-this-extractor rather than guessing.
+    "morris": morris.extract,
 }
 
 
@@ -37,6 +40,7 @@ def build(root: Path = PROJECT_ROOT, counties: list[str] | None = None,
     wanted = [c for c in (counties or EXTRACTORS) if c in EXTRACTORS]
     contests: list[Contest] = []
     missing: list[Document] = []
+    empty: list[Document] = []
 
     for doc in documents(wanted):
         if doc.doc_type != "candidate_list":
@@ -50,8 +54,19 @@ def build(root: Path = PROJECT_ROOT, counties: list[str] | None = None,
             source_document=doc.filename)
         contests.extend(found)
         if verbose:
+            note = "  <-- extracted nothing" if not found else ""
             print(f"{doc.county} {doc.year}: {len(found):>3} contests "
-                  f"from {doc.filename}")
+                  f"from {doc.filename}{note}")
+        if not found:
+            empty.append(doc)
+
+    if empty and verbose:
+        # a captured document that yields nothing is usually a format era
+        # nobody has written a profile for, and it must not pass unremarked
+        print("\ncaptured but extracted nothing (unhandled format?):",
+              file=sys.stderr)
+        for doc in empty:
+            print(f"  {doc.county} {doc.year} {doc.filename}", file=sys.stderr)
 
     if missing and verbose:
         print("\nnot captured, skipped:", file=sys.stderr)

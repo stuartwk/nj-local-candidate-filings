@@ -45,7 +45,12 @@ from .capture import PROJECT_ROOT
 from .model import Contest
 from .sources import documents
 
-EMAIL_RE = re.compile(r"[\w.\-+']+@[\w.\-]+\.\w+")
+# Deliberately looser than any extractor's: county documents contain malformed
+# addresses (`joiurato3@gmail` with no domain, one with two `@`, one using a
+# non-ASCII hyphen). A strict pattern under-counts them and reports a phantom
+# discrepancy. The asymmetry is the point — a strict extractor drops such a
+# candidate, and this notices that it did.
+EMAIL_RE = re.compile(r"\S+@\S+")
 MARKER_RE = re.compile(r"No\s+(?:Nomination\s+Made|Petition\s+Filed)", re.I)
 # deliberately cruder than the extractor's pattern: a contest line says how many
 # years and how many votes, and is not an email address
@@ -74,6 +79,41 @@ def page_texts(path: Path) -> list[str]:
 
 # --- enumeration ---------------------------------------------------------
 
+MORRIS_TITLE_RE = re.compile(
+    r"MEMBER OF THE (?:REGIONAL )?BOARD OF EDUCATION", re.I)
+
+
+def _flatten(text: str) -> str:
+    """Morris separates words with U+00A0 about half the time."""
+    return re.sub(r"[ \t\xa0]+", " ", text)
+
+
+def enumerate_morris(text: str, contests: list[Contest]) -> list[str]:
+    """Morris prints one row per candidate, each repeating its contest's
+    heading, so the row count is exactly checkable: every contest title is one
+    filing or one unfilled seat, and nothing else."""
+    flat = _flatten(text)
+    issues = []
+    titles = len(MORRIS_TITLE_RE.findall(flat))
+    rows = sum(len(c.candidates_filed) for c in contests) \
+        + sum(c.seats_unfilled_stated or 0 for c in contests)
+    if titles != rows:
+        issues.append(f"{titles} contest-title rows in the document but "
+                      f"{rows} filings and unfilled seats recorded")
+
+    # per town, the same count
+    for town in sorted({c.municipality for c in contests if c.municipality}):
+        expected = sum(1 for i, line in enumerate(flat.splitlines())
+                       if MORRIS_TITLE_RE.match(line.strip())
+                       and i and flat.splitlines()[i - 1].strip() == town)
+        got = sum(len(c.candidates_filed) + (c.seats_unfilled_stated or 0)
+                  for c in contests if c.municipality == town)
+        if expected != got:
+            issues.append(f"{town}: source shows {expected} rows, "
+                          f"dataset has {got}")
+    return issues
+
+
 def enumerate_document(text: str, contests: list[Contest]) -> list[str]:
     """Document-wide counts that must agree. Returns complaints.
 
@@ -94,12 +134,15 @@ def enumerate_document(text: str, contests: list[Contest]) -> list[str]:
     if markers != unfilled:
         issues.append(f"{markers} unfilled-seat markers but {unfilled} recorded")
 
-    # crude, independent count of contest lines
-    lines = [l for l in text.splitlines() if CONTEST_ISH.search(l)
-             and not EMAIL_RE.search(l)]
-    if len(lines) != len(contests):
-        issues.append(f"{len(lines)} contest-shaped lines but "
-                      f"{len(contests)} contests extracted")
+    # crude, independent count of contest lines. Only meaningful for a document
+    # that puts a contest on its own line; Morris does not, and has its own
+    # check above.
+    if not MORRIS_TITLE_RE.search(_flatten(text)):
+        lines = [l for l in text.splitlines() if CONTEST_ISH.search(l)
+                 and not EMAIL_RE.search(l)]
+        if len(lines) != len(contests):
+            issues.append(f"{len(lines)} contest-shaped lines but "
+                          f"{len(contests)} contests extracted")
     return issues
 
 
@@ -171,10 +214,65 @@ def enumerate_municipalities(text: str, contests: list[Contest],
 # --- transcription --------------------------------------------------------
 
 def check_record(contest: Contest, pages: list[str]) -> dict[str, object]:
-    """Confirm each field against the page the record cites."""
+    """Confirm each field against the page the record cites.
+
+    The probes differ by county because the documents differ: Hunterdon writes
+    a contest as a sentence (`3 Yr. Term - Vote for Three`), Morris as columns
+    of a table. A single probe would either pass vacuously on one or fail
+    wrongly on the other.
+    """
     page = pages[contest.source_page - 1] if contest.source_page and \
         contest.source_page <= len(pages) else ""
+    if contest.county == "morris":
+        return _check_tabular(contest, page)
+    return _check_outline(contest, page)
 
+
+def _check_tabular(contest: Contest, page: str) -> dict[str, object]:
+    """Morris: the four header fields sit on consecutive lines above the
+    candidate, so the check is that the row exists in that order."""
+    lines = [_flatten(l).strip() for l in page.splitlines()]
+    # A candidate's given and family names are on separate lines of the table,
+    # so the page has to be flattened across newlines before looking for a whole
+    # name — otherwise every Morris record fails for a formatting reason.
+    flat = re.sub(r"\s+", " ", page.replace("\xa0", " "))
+
+    municipality_ok = bool(contest.municipality) and contest.municipality in flat
+    row_ok = False
+    for i, line in enumerate(lines[:-3]):
+        if line != contest.municipality or not MORRIS_TITLE_RE.match(lines[i + 1]):
+            continue
+        if lines[i + 2] != str(contest.term_years):
+            continue
+        seats, _, district = lines[i + 3].partition(" ")
+        if seats != str(contest.seats_available):
+            continue
+        if contest.district_name and district.strip() != contest.district_name:
+            continue
+        row_ok = True
+        break
+
+    names_ok = all(c.name in flat for c in contest.candidates_filed)
+    checks = [municipality_ok, row_ok, names_ok]
+    return {
+        "municipality_on_page": municipality_ok,
+        "term_on_page": row_ok,
+        "seats_on_page": row_ok,
+        "names_on_page": names_ok,
+        "verdict": "ok" if all(checks) else "CHECK",
+        "source_excerpt": " / ".join(
+            l for l in lines[:6] if l)[:420] if not municipality_ok
+        else _tabular_excerpt(lines, contest),
+    }
+
+
+def _tabular_excerpt(lines: list[str], contest: Contest, width: int = 420) -> str:
+    start = next((i for i, l in enumerate(lines)
+                  if l == contest.municipality), 0)
+    return " / ".join(l for l in lines[start:start + 10] if l)[:width]
+
+
+def _check_outline(contest: Contest, page: str) -> dict[str, object]:
     # Check inside this contest's own block, not the whole page. A real page
     # carries a dozen contests, so "the phrase appears somewhere on the page"
     # would pass for a seat count belonging to a different town.
@@ -300,8 +398,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {key[0]} {key[1]}: source not cached, skipped")
             continue
         text = "\n".join(page_texts(path))
-        issues = (enumerate_document(text, group)
-                  + enumerate_municipalities(text, group, args.municipalities, rng))
+        issues = enumerate_document(text, group)
+        if key[0] == "morris":
+            issues += enumerate_morris(text, group)
+        else:
+            issues += enumerate_municipalities(text, group,
+                                               args.municipalities, rng)
         if issues:
             failures += len(issues)
             print(f"  {key[0]} {key[1]}: {len(issues)} problem(s)")
