@@ -272,6 +272,40 @@ def capture(docs: list[Document], root: Path = PROJECT_ROOT,
     return counts
 
 
+
+def import_file(source: Path, doc: Document, root: Path = PROJECT_ROOT,
+                verbose: bool = True) -> str:
+    """Register a document somebody downloaded by hand.
+
+    Eleven county sites refuse HTTP clients, so for those the only way to get a
+    document is a human with a browser. Those bytes are just as real as fetched
+    ones and belong in the same cache under the same naming — but the manifest
+    must not pretend we fetched them. The row carries the clerk's URL (that is
+    where the bytes came from) with an empty `http_status`, marking that this
+    project never made the request, and a note saying so outright.
+    """
+    body = source.read_bytes()
+    digest = sha256_bytes(body)
+    _write_atomically(root / doc.local_path, body)
+    manifest = Manifest(root / "data" / "manifest.csv")
+    manifest.append({
+        "url": doc.url, "sha256": digest, "fetched_at": utc_now(),
+        "county": doc.county, "year": doc.year, "doc_type": doc.doc_type,
+        "local_path": doc.local_path, "content_type": _guess_type(doc.filename),
+        "bytes": len(body),
+        "note": f"manually downloaded{'; ' + doc.label if doc.label else ''}",
+    })
+    if verbose:
+        print(f"imported {source} -> {doc.local_path}\n"
+              f"  {len(body):,} bytes  sha256 {digest}")
+    return digest
+
+
+def _guess_type(filename: str) -> str:
+    import mimetypes
+    return mimetypes.guess_type(filename)[0] or ""
+
+
 def plan(docs: list[Document]) -> None:
     for doc in docs:
         print(f"{doc.county:<10} {doc.year}  {doc.doc_type:<15} "
@@ -284,7 +318,9 @@ def main(argv: list[str] | None = None) -> int:
         prog="python -m njfilings.capture",
         description="Fetch declared county documents into the local cache.")
     parser.add_argument("--county", action="append", metavar="NAME",
-                        choices=sorted(COUNTIES), help="repeatable; default all")
+                        help="repeatable; default all declared counties. "
+                             "With --import, any name is accepted — the point "
+                             "is counties we cannot fetch")
     parser.add_argument("--year", action="append", metavar="YYYY",
                         help="repeatable; default all")
     parser.add_argument("--limit", type=int, metavar="N",
@@ -301,12 +337,41 @@ def main(argv: list[str] | None = None) -> int:
                         help="list known cycles with no established URL, and exit")
     parser.add_argument("--root", type=Path, default=PROJECT_ROOT,
                         help="project root holding cache/ and data/")
+
+    manual = parser.add_argument_group(
+        "registering a hand-downloaded file",
+        "for the counties whose sites refuse HTTP clients")
+    manual.add_argument("--import", dest="import_file", type=Path, metavar="FILE")
+    manual.add_argument("--url", metavar="URL",
+                        help="the clerk's URL the file came from")
+    manual.add_argument("--doc-type", default="candidate_list",
+                        choices=["candidate_list", "seats_notice", "sample_ballot"])
+    manual.add_argument("--name", metavar="FILENAME",
+                        help="name inside the cache (default: the file's own)")
     args = parser.parse_args(argv)
+
+    if args.import_file:
+        missing = [f for f, v in (("--county", args.county),
+                                  ("--year", args.year),
+                                  ("--url", args.url)) if not v]
+        if missing:
+            parser.error(f"--import needs {', '.join(missing)}")
+        if not args.import_file.is_file():
+            parser.error(f"no such file: {args.import_file}")
+        doc = Document(args.county[0], args.year[0], args.doc_type, args.url,
+                       args.name or args.import_file.name)
+        import_file(args.import_file, doc, root=args.root)
+        return 0
 
     if args.gaps:
         for county, year, note in KNOWN_GAPS:
             print(f"{county:<10} {year}  {note}")
         return 0
+
+    unknown = [c for c in (args.county or []) if c not in COUNTIES]
+    if unknown:
+        parser.error(f"not a declared county: {', '.join(unknown)}. "
+                     f"Known: {', '.join(sorted(COUNTIES))}")
 
     docs = documents(args.county, args.year)
     if args.limit:
