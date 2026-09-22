@@ -7,7 +7,6 @@
 # not preserved and an identical row appended on both sides survives twice —
 # both are harmless here, because the ledger is read as "last row per URL" and
 # rows carry their own timestamps.
-data/manifest.csv       merge=union
 data/manifest/*.csv     merge=union
 
 # Deliberately NOT union-merged: data/races.csv and data/coverage.csv are

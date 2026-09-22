@@ -13,9 +13,9 @@ from njfilings import archive
 
 
 def manifest(tmp_path, rows):
-    p = tmp_path / "data" / "manifest.csv"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with p.open("w", newline="") as fh:
+    p = tmp_path / "data" / "manifest"
+    p.mkdir(parents=True, exist_ok=True)
+    with (p / "2026.csv").open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=["url", "sha256", "note"])
         w.writeheader()
         w.writerows(rows)
@@ -69,7 +69,7 @@ def test_repeated_captures_submit_once_in_first_seen_order(tmp_path):
 
 
 def test_missing_manifest_is_not_an_error(tmp_path):
-    assert archive.captured_urls(tmp_path / "nope.csv") == []
+    assert archive.captured_urls(tmp_path / "nope") == []
 
 
 # --- resuming ------------------------------------------------------------

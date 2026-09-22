@@ -14,7 +14,7 @@ statewide dataset and nothing here should be described as a New Jersey figure.
 |---|---|
 | `data/races.csv` | one row per contest — the dataset |
 | `data/coverage.csv` | what is covered, what is not, and why |
-| `data/manifest.csv` | every document fetched: URL, sha256, timestamp |
+| `data/manifest/` | every document fetched: URL, sha256, timestamp, one file per cycle |
 | `data/validation.csv` | sampled records checked against their source page |
 
 ## What was counted
@@ -131,7 +131,7 @@ uv run pytest -q
 
 `cache/` is not in this repository — it is 173 MB of county PDFs — but every
 document in it can be re-fetched from the URL and checked against the sha256 in
-`data/manifest.csv`. `build` reads only from `cache/` and never the network.
+`data/manifest/`. `build` reads only from `cache/` and never the network.
 
 `data/races.csv` is sorted on a fixed key with fixed columns, so a diff shows
 what actually changed rather than rows that moved. That diff is the review

@@ -2,7 +2,7 @@
 
 This is the only module that touches the network, and it is deliberately dumb:
 it fetches bytes, writes them to `cache/<county>/<year>/<filename>`, and appends
-one row per attempt to `data/manifest.csv`. It does not open, decode, or
+one row per attempt to `data/manifest/<cycle>.csv`. It does not open, decode, or
 interpret a single document — every file lands byte-for-byte as served, and
 whether it is a usable PDF is a question for the parsers.
 
@@ -100,14 +100,26 @@ class HostThrottle:
 
 
 class Manifest:
-    """Append-only record of every fetch attempt."""
+    """Append-only record of every fetch attempt, one file per election cycle.
 
-    def __init__(self, path: Path):
-        self.path = path
+    Sharded on the document's *election* year rather than the date it was
+    fetched, so a cycle's provenance stays one file a person can open. That
+    matters more once capture runs on a schedule: a single ledger over 21
+    counties and many years becomes something nobody reads, and a diff nobody
+    reviews is not a review mechanism.
+
+    Reads take every shard; writes go to the shard for the row's year.
+    """
+
+    def __init__(self, directory: Path):
+        self.directory = directory
         self.rows: list[dict[str, str]] = []
-        if path.exists():
+        for path in sorted(directory.glob("*.csv")) if directory.is_dir() else []:
             with path.open(newline="", encoding="utf-8") as fh:
-                self.rows = list(csv.DictReader(fh))
+                self.rows.extend(csv.DictReader(fh))
+
+    def shard(self, year: str) -> Path:
+        return self.directory / f"{year or 'unknown'}.csv"
 
     def held(self, doc: Document, root: Path) -> str | None:
         """The sha256 we already hold for this document, or None.
@@ -124,6 +136,17 @@ class Manifest:
             return None        # the newest record for this URL no longer holds
         return None
 
+    def recorded(self, url: str) -> str | None:
+        """The sha256 the ledger claims for a URL, without looking at the disk.
+
+        Only for a run that is hunting for documents it has never seen — a
+        scheduled capture starts with an empty cache and must not re-download
+        everything it already has a record of. It proves nothing about the
+        bytes, which is why the ordinary path does not use it.
+        """
+        row = self.last_row(url)
+        return row.get("sha256") or None if row else None
+
     def last_row(self, url: str) -> dict[str, str] | None:
         """The most recent row for this URL, whatever its outcome."""
         for row in reversed(self.rows):
@@ -132,12 +155,13 @@ class Manifest:
         return None
 
     def append(self, row: dict[str, object]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        new_file = not self.path.exists() or self.path.stat().st_size == 0
+        path = self.shard(str(row.get("year") or ""))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        new_file = not path.exists() or path.stat().st_size == 0
         out = {k: ("" if row.get(k) is None else str(row.get(k)))
                for k in MANIFEST_FIELDS}
         # written and flushed per row: an interrupted run keeps its record
-        with self.path.open("a", newline="", encoding="utf-8") as fh:
+        with path.open("a", newline="", encoding="utf-8") as fh:
             writer = csv.DictWriter(fh, fieldnames=MANIFEST_FIELDS)
             if new_file:
                 writer.writeheader()
@@ -184,10 +208,18 @@ def _write_atomically(path: Path, data: bytes) -> None:
 def capture(docs: list[Document], root: Path = PROJECT_ROOT,
             delay: float = DEFAULT_DELAY, timeout: float = DEFAULT_TIMEOUT,
             refetch: bool = False, verbose: bool = True,
-            transport: httpx.BaseTransport | None = None) -> Counts:
+            transport: httpx.BaseTransport | None = None,
+            new_only: bool = False) -> Counts:
     """Fetch each document once, recording every outcome. Never raises for a
-    single document's failure."""
-    manifest = Manifest(root / "data" / "manifest.csv")
+    single document's failure.
+
+    `new_only` skips anything the ledger already records a sha256 for, without
+    looking at the disk. That is wrong for a person's machine, where the cache
+    is the point — but right for a scheduled run, which starts with an empty
+    runner and is hunting for documents nobody has seen yet. Without it every
+    scheduled run would re-download the entire corpus from county servers.
+    """
+    manifest = Manifest(root / "data" / "manifest")
     throttle = HostThrottle(delay)
     counts = Counts()
     width = len(str(len(docs)))
@@ -204,6 +236,14 @@ def capture(docs: list[Document], root: Path = PROJECT_ROOT,
         for i, doc in enumerate(docs, 1):
             base = dict(url=doc.url, county=doc.county, year=doc.year,
                         doc_type=doc.doc_type, note=doc.label)
+
+            if new_only and not refetch:
+                # the ledger's word is enough here: we are looking for what is
+                # new, not verifying what we have
+                if manifest.recorded(doc.url):
+                    counts.skipped += 1
+                    log(i, doc, "known")
+                    continue
 
             if not refetch:
                 held = manifest.held(doc, root)
@@ -287,7 +327,7 @@ def import_file(source: Path, doc: Document, root: Path = PROJECT_ROOT,
     body = source.read_bytes()
     digest = sha256_bytes(body)
     _write_atomically(root / doc.local_path, body)
-    manifest = Manifest(root / "data" / "manifest.csv")
+    manifest = Manifest(root / "data" / "manifest")
     manifest.append({
         "url": doc.url, "sha256": digest, "fetched_at": utc_now(),
         "county": doc.county, "year": doc.year, "doc_type": doc.doc_type,
@@ -304,6 +344,34 @@ def import_file(source: Path, doc: Document, root: Path = PROJECT_ROOT,
 def _guess_type(filename: str) -> str:
     import mimetypes
     return mimetypes.guess_type(filename)[0] or ""
+
+
+def regressions(manifest: Manifest) -> list[tuple[str, str, str]]:
+    """URLs that used to work and have stopped.
+
+    This is the failure a schedule exists to catch. A county that has never
+    worked is a known gap and says so in `--gaps`; a county that worked last
+    month and 404s today has moved its documents, and every cycle captured after
+    that is lost unless somebody notices. Nothing else in the project would
+    notice — capture treats a 404 as data and carries on, which is right for a
+    single document and wrong for a whole county at once.
+
+    Returns (county, url, what went wrong), one per regressed URL.
+    """
+    history: dict[str, list[dict[str, str]]] = {}
+    for row in manifest.rows:
+        history.setdefault(row.get("url", ""), []).append(row)
+
+    out = []
+    for url, rows in history.items():
+        if not any(r.get("sha256") for r in rows):
+            continue                  # never worked: a gap, not a regression
+        last = rows[-1]
+        if last.get("sha256"):
+            continue                  # still working
+        detail = last.get("note") or f"http {last.get('http_status') or '?'}"
+        out.append((last.get("county", ""), url, detail))
+    return sorted(out)
 
 
 def plan(docs: list[Document]) -> None:
@@ -331,10 +399,17 @@ def main(argv: list[str] | None = None) -> int:
                         metavar="SECONDS")
     parser.add_argument("--refetch", action="store_true",
                         help="fetch even where the held copy still matches")
+    parser.add_argument("--new-only", action="store_true",
+                        help="fetch only what the ledger has never recorded, "
+                             "without checking the cache. For scheduled runs, "
+                             "which start with no cache at all")
     parser.add_argument("--dry-run", action="store_true",
                         help="print the plan; touch neither network nor manifest")
     parser.add_argument("--gaps", action="store_true",
                         help="list known cycles with no established URL, and exit")
+    parser.add_argument("--regressions", action="store_true",
+                        help="list documents that used to work and no longer "
+                             "do, and exit non-zero if there are any")
     parser.add_argument("--root", type=Path, default=PROJECT_ROOT,
                         help="project root holding cache/ and data/")
 
@@ -368,6 +443,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{county:<10} {year}  {note}")
         return 0
 
+    if args.regressions:
+        found = regressions(Manifest(args.root / "data" / "manifest"))
+        if not found:
+            print("nothing that once worked has stopped")
+            return 0
+        print(f"{len(found)} document(s) that used to work and no longer do:",
+              file=sys.stderr)
+        for county, url, detail in found:
+            print(f"  {county:<12} {detail:<28} {url}", file=sys.stderr)
+        return 1
+
     unknown = [c for c in (args.county or []) if c not in COUNTIES]
     if unknown:
         parser.error(f"not a declared county: {', '.join(unknown)}. "
@@ -385,8 +471,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     counts = capture(docs, root=args.root, delay=args.delay,
-                     timeout=args.timeout, refetch=args.refetch)
-    print(f"\n{counts}  ->  {args.root / 'data' / 'manifest.csv'}")
+                     timeout=args.timeout, refetch=args.refetch,
+                     new_only=args.new_only)
+    print(f"\n{counts}  ->  {args.root / 'data' / 'manifest'}/")
     return 0
 
 
