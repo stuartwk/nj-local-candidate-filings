@@ -37,11 +37,12 @@ def responder(status: int = 200, body: bytes = PDF,
 
 
 def manifest_rows(root: Path) -> list[dict[str, str]]:
-    path = root / "data" / "manifest.csv"
-    if not path.exists():
-        return []
-    with path.open(newline="") as fh:
-        return list(csv.DictReader(fh))
+    directory = root / "data" / "manifest"
+    rows = []
+    for path in sorted(directory.glob("*.csv")) if directory.is_dir() else []:
+        with path.open(newline="") as fh:
+            rows.extend(csv.DictReader(fh))
+    return rows
 
 
 def run(docs, root, **kw) -> Counts:
@@ -89,7 +90,7 @@ def test_fetched_at_is_utc_iso8601(tmp_path):
 def test_manifest_columns_are_stable_and_header_written_once(tmp_path):
     run([doc()], tmp_path)
     run([doc("b.pdf", "https://clerk.example/b.pdf")], tmp_path)
-    text = (tmp_path / "data" / "manifest.csv").read_text()
+    text = (tmp_path / "data" / "manifest" / "2026.csv").read_text()
     assert text.splitlines()[0] == ",".join(MANIFEST_FIELDS)
     assert text.count("url,sha256") == 1
     assert len(manifest_rows(tmp_path)) == 2
@@ -348,3 +349,109 @@ def test_an_imported_document_counts_as_held(tmp_path):
     assert seen == []                     # no request went out
     assert counts.skipped == 1
     assert len(manifest_rows(tmp_path)) == 1   # and no heartbeat row
+
+
+# --- the mode a scheduled run needs ---------------------------------------
+
+def test_new_only_trusts_the_ledger_and_asks_for_nothing_it_records(tmp_path):
+    """A scheduled run starts on a fresh machine with no cache at all. The
+    ordinary rule checks the disk, finds nothing, and re-downloads the whole
+    corpus from county servers every night."""
+    seen: list[str] = []
+    run([doc()], tmp_path, transport=responder(log=seen))
+    assert len(seen) == 1
+
+    # the cache is gone, as it would be on a new runner
+    (tmp_path / "cache/testshire/2026/a.pdf").unlink()
+
+    counts = capture([doc()], root=tmp_path, delay=0, verbose=False,
+                     new_only=True, transport=responder(log=seen))
+
+    assert len(seen) == 1              # nothing re-requested
+    assert counts.skipped == 1
+
+
+def test_new_only_still_fetches_what_the_ledger_has_never_seen(tmp_path):
+    seen: list[str] = []
+    run([doc()], tmp_path, transport=responder(log=seen))
+    fresh = doc("new.pdf", "https://clerk.example/new.pdf")
+
+    counts = capture([doc(), fresh], root=tmp_path, delay=0, verbose=False,
+                     new_only=True, transport=responder(log=seen))
+
+    assert seen[-1] == "https://clerk.example/new.pdf"
+    assert (counts.fetched, counts.skipped) == (1, 1)
+
+
+def test_new_only_retries_a_url_that_only_ever_failed(tmp_path):
+    """A 404 leaves no sha256, so the document is still unseen and a later run
+    must try again — that is how a document posted late gets caught."""
+    seen: list[str] = []
+    run([doc()], tmp_path, transport=responder(404, b"", "text/html", log=seen))
+
+    capture([doc()], root=tmp_path, delay=0, verbose=False, new_only=True,
+            transport=responder(log=seen))
+    assert len(seen) == 2
+
+
+def test_the_ledger_is_split_by_election_cycle(tmp_path):
+    """One file per cycle, so a cycle's provenance stays readable once this
+    runs nightly across 21 counties."""
+    run([doc(year="2025"), doc("b.pdf", "https://clerk.example/b.pdf",
+                               year="2026")], tmp_path)
+    shards = sorted(p.name for p in (tmp_path / "data" / "manifest").glob("*.csv"))
+    assert shards == ["2025.csv", "2026.csv"]
+
+
+def test_every_shard_is_read_back(tmp_path):
+    run([doc(year="2025")], tmp_path)
+    run([doc("b.pdf", "https://clerk.example/b.pdf", year="2026")], tmp_path)
+    assert len(manifest_rows(tmp_path)) == 2
+    # and a document recorded in an older shard is still known
+    seen: list[str] = []
+    capture([doc(year="2025")], root=tmp_path, delay=0, verbose=False,
+            new_only=True, transport=responder(log=seen))
+    assert seen == []
+
+
+# --- noticing a county that has stopped working ---------------------------
+
+def test_a_document_that_used_to_work_and_stopped_is_reported(tmp_path):
+    """The failure a schedule exists to catch. Capture treats a 404 as data and
+    carries on, which is right for one document and wrong for a whole county."""
+    from njfilings.capture import Manifest, regressions
+    run([doc()], tmp_path, transport=responder())
+    run([doc()], tmp_path, refetch=True,
+        transport=responder(404, b"", "text/html"))
+
+    found = regressions(Manifest(tmp_path / "data" / "manifest"))
+    assert [(c, u) for c, u, _ in found] == [
+        ("testshire", "https://clerk.example/a.pdf")]
+
+
+def test_a_document_that_never_worked_is_not_a_regression(tmp_path):
+    """Essex's dead URLs have never returned anything. That is a known gap, and
+    reporting it nightly would train everyone to ignore the report."""
+    from njfilings.capture import Manifest, regressions
+    run([doc()], tmp_path, transport=responder(404, b"", "text/html"))
+    assert regressions(Manifest(tmp_path / "data" / "manifest")) == []
+
+
+def test_a_document_that_recovered_is_not_a_regression(tmp_path):
+    from njfilings.capture import Manifest, regressions
+    run([doc()], tmp_path, transport=responder(404, b"", "text/html"))
+    run([doc()], tmp_path, transport=responder())
+    assert regressions(Manifest(tmp_path / "data" / "manifest")) == []
+
+
+def test_a_transport_failure_counts_as_a_regression(tmp_path):
+    from njfilings.capture import Manifest, regressions
+    run([doc()], tmp_path, transport=responder())
+
+    def handler(request):
+        raise httpx.ConnectError("dropped")
+
+    capture([doc()], root=tmp_path, delay=0, verbose=False, refetch=True,
+            transport=httpx.MockTransport(handler))
+    (found,) = regressions(Manifest(tmp_path / "data" / "manifest"))
+    assert "ConnectError" in found[2]

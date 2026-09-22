@@ -76,17 +76,20 @@ def original_url(row: dict[str, str]) -> str:
 
 
 def captured_urls(manifest: Path) -> list[str]:
-    """Every distinct URL we hold bytes for, in the order first captured."""
-    if not manifest.exists():
-        return []
+    """Every distinct URL we hold bytes for, in the order first captured.
+
+    `manifest` is the ledger directory; every cycle's shard is read.
+    """
+    shards = sorted(manifest.glob("*.csv")) if manifest.is_dir() else []
     seen: dict[str, None] = {}
-    with manifest.open(newline="", encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
-            if not row.get("sha256"):
-                continue            # a failed fetch proves nothing worth saving
-            url = original_url(row)
-            if url:
-                seen.setdefault(url, None)
+    for shard in shards:
+        with shard.open(newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                if not row.get("sha256"):
+                    continue        # a failed fetch proves nothing worth saving
+                url = original_url(row)
+                if url:
+                    seen.setdefault(url, None)
     return list(seen)
 
 
@@ -196,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.dry_run:
             return 1
 
-    manifest = args.root / "data" / "manifest.csv"
+    manifest = args.root / "data" / "manifest"
     done = already_submitted(args.root / "data" / "archive_submissions.csv")
     pending = [u for u in captured_urls(manifest) if u not in done]
 
